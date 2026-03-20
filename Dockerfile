@@ -6,17 +6,18 @@ ENV WINEPREFIX=/root/.wine
 ENV WINEDEBUG=-all
 ENV DISPLAY=:0
 
-# System packages (no i386 — pure 64-bit)
+# System packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl wget gnupg2 git xvfb \
     bash build-essential python3 && rm -rf /var/lib/apt/lists/*
 
-# Wine (WineHQ stable — amd64 only, no i386)
-RUN apt-get update && \
+# Wine (WineHQ stable with i386 support)
+RUN dpkg --add-architecture i386 && \
+    apt-get update && \
     wget -qO /etc/apt/trusted.gpg.d/winehq.asc https://dl.winehq.org/wine-builds/winehq.key && \
     echo "deb https://dl.winehq.org/wine-builds/debian/ bookworm main" > /etc/apt/sources.list.d/winehq.list && \
     apt-get update && \
-    apt-get install -y --no-install-recommends wine-stable-amd64 wine-stable && \
+    apt-get install -y --install-recommends winehq-stable && \
     rm -rf /var/lib/apt/lists/*
 
 # winetricks
@@ -24,20 +25,24 @@ RUN wget -q -O /usr/local/bin/winetricks \
     https://raw.githubusercontent.com/Winetricks/winetricks/master/src/winetricks && \
     chmod +x /usr/local/bin/winetricks
 
-# Initialize Wine prefix (64-bit only)
-RUN Xvfb :0 -screen 0 1024x768x24 -nolisten tcp & sleep 4 && \
-    WINEARCH=win64 wineboot --init && sleep 10
+# Initialize Wine prefix (64-bit only, longer timeout for CI)
+RUN Xvfb :0 -screen 0 1024x768x24 -nolisten tcp & sleep 2 && \
+    WINEARCH=win64 WINEPREFIX=/root/.wine wineboot --init && \
+    while pgrep -f wineserver > /dev/null; do sleep 2; done && \
+    sleep 5
 
 # Install Python 3.13 for Windows (64-bit) inside Wine
 RUN wget -q -O /tmp/python313.exe \
     "https://www.python.org/ftp/python/3.13.0/python-3.13.0-amd64.exe" && \
-    Xvfb :0 -screen 0 1024x768x24 -nolisten tcp & sleep 3 && \
+    Xvfb :0 -screen 0 1024x768x24 -nolisten tcp & sleep 2 && \
     wine /tmp/python313.exe /quiet InstallAllUsers=1 PrependPath=1 Include_test=0 Include_launcher=0 && \
-    sleep 10 && rm /tmp/python313.exe
+    while pgrep -f wineserver > /dev/null; do sleep 2; done && \
+    sleep 5 && rm /tmp/python313.exe
 
 # Install uv and coverage into Wine Python
 RUN Xvfb :0 -screen 0 1024x768x24 -nolisten tcp & sleep 2 && \
-    wine python -m pip install --quiet uv coverage && sleep 3
+    wine python -m pip install --quiet uv coverage && \
+    while pgrep -f wineserver > /dev/null; do sleep 2; done
 
 # Clone comtypes
 RUN git clone https://github.com/enthought/comtypes.git /app
@@ -53,6 +58,7 @@ RUN git remote rename origin upstream && \
 
 # Install comtypes in editable mode
 RUN Xvfb :0 -screen 0 1024x768x24 -nolisten tcp & sleep 2 && \
-    wine python -m pip install --quiet -e /app && sleep 4
+    wine python -m pip install --quiet -e /app && \
+    while pgrep -f wineserver > /dev/null; do sleep 2; done
 
 CMD ["bash"]
